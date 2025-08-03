@@ -1,3 +1,7 @@
+###GROUP MEMBERS###
+### MIKYLE SINGH  2465557 ###
+### ANAND PATEL 2561034 ###
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -19,11 +23,15 @@ class MultiArmedBandit:
 def epsilon_greedy(k, steps, epsilon, alpha=None, runs=100, seed=0):
     master_rng = np.random.default_rng(seed)
     avg_reward = np.zeros(steps)
+    optimal_action_count = np.zeros(steps)
+    
     for _ in range(runs):
         rng = np.random.default_rng(master_rng.integers(0, 2**32))
         bandit = MultiArmedBandit(k=k, rng=rng)
         q_vals = np.zeros(k)
         counts = np.zeros(k)
+        optimal_action = np.argmax(bandit.true_means)  # ✅ Find optimal arm
+
         for t in range(steps):
             if rng.random() < epsilon:
                 act = rng.integers(0, k)
@@ -31,6 +39,10 @@ def epsilon_greedy(k, steps, epsilon, alpha=None, runs=100, seed=0):
                 max_val = q_vals.max()
                 cand = np.where(np.isclose(q_vals, max_val))[0]
                 act = rng.choice(cand)
+            
+            if act == optimal_action:
+                optimal_action_count[t] += 1  # ✅ Track optimal choice
+
             rew = bandit.pull(act)
             avg_reward[t] += rew
             counts[act] += 1
@@ -38,38 +50,55 @@ def epsilon_greedy(k, steps, epsilon, alpha=None, runs=100, seed=0):
                 q_vals[act] += (rew - q_vals[act]) / counts[act]
             else:
                 q_vals[act] += alpha * (rew - q_vals[act])
+
     avg_reward /= runs
-    return avg_reward
+    optimal_action_count /= runs  # ✅ Convert to %
+    return avg_reward, optimal_action_count
+
 
 
 def optimistic_greedy(k, steps, initial_q, alpha, runs=100, seed=0):
     master_rng = np.random.default_rng(seed)
     avg = np.zeros(steps)
+    optimal_action_count = np.zeros(steps)
+
     for _ in range(runs):
         rng = np.random.default_rng(master_rng.integers(0, 2**32))
         bandit = MultiArmedBandit(k=k, rng=rng)
         q_vals = np.full(k, initial_q, dtype=float)
         counts = np.zeros(k)
+        optimal_action = np.argmax(bandit.true_means)
+
         for t in range(steps):
             max_val = q_vals.max()
             cand = np.where(np.isclose(q_vals, max_val))[0]
             act = rng.choice(cand)
+
+            if act == optimal_action:
+                optimal_action_count[t] += 1
+
             rew = bandit.pull(act)
             avg[t] += rew
             counts[act] += 1
             q_vals[act] += alpha * (rew - q_vals[act])
+
     avg /= runs
-    return avg
+    optimal_action_count /= runs
+    return avg, optimal_action_count
 
 
 def ucb(k, steps, c, runs=100, seed=0):
     master_rng = np.random.default_rng(seed)
     avg = np.zeros(steps)
+    optimal_action_count = np.zeros(steps)
+
     for _ in range(runs):
         rng = np.random.default_rng(master_rng.integers(0, 2**32))
         bandit = MultiArmedBandit(k=k, rng=rng)
         q_vals = np.zeros(k)
         counts = np.zeros(k)
+        optimal_action = np.argmax(bandit.true_means)
+
         for t in range(steps):
             if (counts == 0).any():
                 zero = np.where(counts == 0)[0]
@@ -79,25 +108,34 @@ def ucb(k, steps, c, runs=100, seed=0):
                 max_val = ucb_values.max()
                 cand = np.where(np.isclose(ucb_values, max_val))[0]
                 act = rng.choice(cand)
+
+            if act == optimal_action:
+                optimal_action_count[t] += 1
+
             rew = bandit.pull(act)
             avg[t] += rew
             counts[act] += 1
             q_vals[act] += (rew - q_vals[act]) / counts[act]
+
     avg /= runs
-    return avg
+    optimal_action_count /= runs
+    return avg, optimal_action_count
 
 
 def run_lab():
     k = 10
     steps = 1000
     runs = 100
-    #fixed hyperparameters
-    eps_curve = epsilon_greedy(k, steps, epsilon=0.1, alpha=None, runs=runs)
-    opt_curve = optimistic_greedy(k, steps, initial_q=5.0, alpha=0.1, runs=runs)
-    ucb_curve = ucb(k, steps, c=2.0, runs=runs)
+
+    # Run all algorithms
+    eps_curve, eps_opt = epsilon_greedy(k, steps, epsilon=0.1, alpha=None, runs=runs)
+    opt_curve, opt_opt = optimistic_greedy(k, steps, initial_q=5.0, alpha=0.1, runs=runs)
+    ucb_curve, ucb_opt = ucb(k, steps, c=2.0, runs=runs)
+
+    # Plot 1: Reward over Time
     plt.figure(figsize=(8, 5))
-    plt.plot(eps_curve, label="epsilon-greedy (epsilon=0.1)")
-    plt.plot(opt_curve, label="optimistic greedy (Q1=5, alpha=0.1)")
+    plt.plot(eps_curve, label="epsilon-greedy (ε=0.1)")
+    plt.plot(opt_curve, label="optimistic greedy (Q1=5, α=0.1)")
     plt.plot(ucb_curve, label="UCB (c=2)")
     plt.xlabel("Steps")
     plt.ylabel("Average Reward")
@@ -108,13 +146,28 @@ def run_lab():
     plt.savefig("reward_over_time.png")
     plt.close()
 
-    #hyperparameter study
+    # Plot 2: % Optimal Action over Time
+    plt.figure(figsize=(8, 5))
+    plt.plot(eps_opt * 100, label="epsilon-greedy (ε=0.1)")
+    plt.plot(opt_opt * 100, label="optimistic greedy (Q1=5, α=0.1)")
+    plt.plot(ucb_opt * 100, label="UCB (c=2)")
+    plt.xlabel("Steps")
+    plt.ylabel("% Optimal Action")
+    plt.title("Optimal Action % over time (100-run average)")
+    plt.legend()
+    plt.grid(True, linestyle='--', linewidth=0.5)
+    plt.tight_layout()
+    plt.savefig("optimal_action_over_time.png")
+    plt.close()
+
+    # Plot 3: Hyperparameter Study
     eps_vals = [0.01, 0.05, 0.1, 0.2, 0.5]
-    eps_perf = [epsilon_greedy(k, steps, epsilon=x, alpha=None, runs=runs).mean() for x in eps_vals]
+    eps_perf = [epsilon_greedy(k, steps, epsilon=x, alpha=None, runs=runs)[0].mean() for x in eps_vals]
     q_vals = [0.0, 2.5, 5.0, 10.0]
-    opt_perf = [optimistic_greedy(k, steps, initial_q=q, alpha=0.1, runs=runs).mean() for q in q_vals]
+    opt_perf = [optimistic_greedy(k, steps, initial_q=q, alpha=0.1, runs=runs)[0].mean() for q in q_vals]
     c_vals = [0.5, 1.0, 2.0, 5.0]
-    ucb_perf = [ucb(k, steps, c=v, runs=runs).mean() for v in c_vals]
+    ucb_perf = [ucb(k, steps, c=v, runs=runs)[0].mean() for v in c_vals]
+
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(eps_vals, eps_perf, marker='o', label="epsilon-greedy")
     ax.plot(q_vals, opt_perf, marker='o', label="optimistic greedy")
@@ -128,6 +181,7 @@ def run_lab():
     plt.tight_layout()
     plt.savefig("hyperparam_study.png")
     plt.close()
+
 
 
 if __name__ == "__main__":
